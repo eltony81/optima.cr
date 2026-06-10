@@ -1,0 +1,20 @@
+name: optima
+version: 0.1.0
+
+authors:
+  - Tony <tony@example.com>
+
+targets:
+  optima:
+    main: src/optima.cr
+
+crystal: ">= 1.0.0"
+
+dependencies:
+  num:
+    github: eltony81/num.cr
+
+license: MIT
+
+scripts:
+  postinstall: sh ext/compile_check.sh
