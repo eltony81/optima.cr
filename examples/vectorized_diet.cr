@@ -32,9 +32,9 @@ model.objective = costs.to_unsafe[0] * x.to_unsafe[0] + costs.to_unsafe[1] * x.t
 # Row 1: Protein per serving in grams (Oats: 6g, Milk: 8g, Eggs: 6g)
 # Row 2: Fat per serving in grams (Oats: 2g, Milk: 4g, Eggs: 5g)
 nutrient_matrix = Tensor.from_array([
-  [150.0, 100.0,  70.0],
-  [  6.0,   8.0,   6.0],
-  [  2.0,   4.0,   5.0]
+  [150.0, 100.0, 70.0],
+  [6.0, 8.0, 6.0],
+  [2.0, 4.0, 5.0],
 ])
 
 # 5. Multiply matrix by variable vector to get nutrient expression vector of shape [3]

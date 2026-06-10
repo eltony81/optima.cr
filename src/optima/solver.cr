@@ -1,7 +1,7 @@
 module Optima
   # Represents the optimization direction.
   enum ObjectiveSense
-    Minimize = 1
+    Minimize =  1
     Maximize = -1
   end
 

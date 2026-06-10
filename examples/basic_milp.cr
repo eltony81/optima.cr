@@ -18,8 +18,8 @@ model = Optima::Model.new("Knapsack Backpack Problem", Optima::ObjectiveSense::M
 # 2. Define binary decision variables (category: VariableType::Binary).
 # 1 means item is packed, 0 means item is left behind.
 camera = model.variable("Pack_Camera", category: Optima::VariableType::Binary)
-book   = model.variable("Pack_Book", category: Optima::VariableType::Binary)
-tent   = model.variable("Pack_Tent", category: Optima::VariableType::Binary)
+book = model.variable("Pack_Book", category: Optima::VariableType::Binary)
+tent = model.variable("Pack_Tent", category: Optima::VariableType::Binary)
 
 # 3. Define the objective function: maximize total utility value.
 # Camera utility = 8, Book utility = 3, Tent utility = 10.

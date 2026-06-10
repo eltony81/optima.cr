@@ -29,8 +29,8 @@ x = model.variable_vector("ship", size: 6)
 # Plant_0 shipping costs to Whs: $2.0, $4.0, $5.0
 # Plant_1 shipping costs to Whs: $3.0, $1.0, $6.0
 costs = Tensor.from_array([
-  2.0, 4.0, 5.0,  # Plant_0 routes
-  3.0, 1.0, 6.0   # Plant_1 routes
+  2.0, 4.0, 5.0, # Plant_0 routes
+  3.0, 1.0, 6.0, # Plant_1 routes
 ])
 
 # Objective: Minimize total cost (manually sum products of costs and variables)
@@ -42,7 +42,7 @@ model.objective = (0...6).map { |idx| costs.to_unsafe[idx] * x.to_unsafe[idx] }.
 # We can represent this with a coefficient matrix of shape 2x6:
 supply_coefs = Tensor.from_array([
   [1.0, 1.0, 1.0, 0.0, 0.0, 0.0], # Plant_0 shipment sum
-  [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]  # Plant_1 shipment sum
+  [0.0, 0.0, 0.0, 1.0, 1.0, 1.0], # Plant_1 shipment sum
 ])
 plant_outflow = supply_coefs * x
 plant_capacities = Tensor.from_array([100.0, 150.0])
@@ -56,7 +56,7 @@ model << (plant_outflow <= plant_capacities)
 demand_coefs = Tensor.from_array([
   [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], # Wh_0 incoming sum
   [0.0, 1.0, 0.0, 0.0, 1.0, 0.0], # Wh_1 incoming sum
-  [0.0, 0.0, 1.0, 0.0, 0.0, 1.0]  # Wh_2 incoming sum
+  [0.0, 0.0, 1.0, 0.0, 0.0, 1.0], # Wh_2 incoming sum
 ])
 wh_inflow = demand_coefs * x
 wh_demands = Tensor.from_array([80.0, 70.0, 90.0])

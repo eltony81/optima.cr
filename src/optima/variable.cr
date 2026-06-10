@@ -2,11 +2,11 @@ require "json"
 
 module Optima
   enum VariableType
-    Continuous = 0
-    Integer = 1
+    Continuous     = 0
+    Integer        = 1
     SemiContinuous = 2
-    Binary = 3
-    SemiInteger = 4
+    Binary         = 3
+    SemiInteger    = 4
   end
 
   def self.lpSum(items : Enumerable(Variable | Expression | Number)) : Expression
@@ -137,6 +137,7 @@ struct Number
   def -(other : Optima::Expression) : Optima::Expression
     other * -1.0 + self
   end
+
   def <=(other : Optima::Variable) : Optima::Constraint
     Optima::Expression.new(other) >= self
   end

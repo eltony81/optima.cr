@@ -111,7 +111,7 @@ describe Optima do
 
       c = x <= 5
       model.add_indicator_constraint(z, 1, c, big_m: 1000.0)
-      
+
       ic = model.constraints.first
       ic.constraint_type.should eq(Optima::ConstraintType::LessThanOrEqual)
       ic.expr.terms[x].should eq(1.0)
@@ -148,9 +148,9 @@ describe Optima do
     it "supports named constraints via tuple appending" do
       model = Optima::Model.new("Test Model")
       x = model.variable("x")
-      
+
       model << {x <= 10, "upper_limit"}
-      
+
       model.constraints.first.name.should eq("upper_limit")
     end
 
@@ -178,7 +178,7 @@ describe Optima do
     end
     it "supports checking out and checking in solvers from SolverPool" do
       pool = Optima::SolverPool.new(capacity: 2)
-      
+
       pool.use do |solver|
         solver.should be_a(Optima::HighsSolver)
       end
@@ -187,7 +187,7 @@ describe Optima do
     it "raises ModelError when trying to solve a model with zero variables" do
       model = Optima::Model.new("Empty Model")
       solver = Optima::HighsSolver.new
-      
+
       expect_raises(Optima::ModelError) do
         model.solve(solver)
       end
@@ -241,10 +241,10 @@ describe Optima do
       model = Optima::Model.from_lp(lp_string)
       model.sense.should eq(Optima::ObjectiveSense::Maximize)
       model.variables.size.should eq(2)
-      
+
       x = model.variables.find { |v| v.name == "x" }.not_nil!
       y = model.variables.find { |v| v.name == "y" }.not_nil!
-      
+
       x.lower_bound.should eq(0.0)
       x.upper_bound.should eq(5.0)
       y.var_type.should eq(Optima::VariableType::Binary)
@@ -375,13 +375,13 @@ describe Optima do
     describe "Callbacks support" do
       it "supports on_message in HighsSolver" do
         solver = Optima::HighsSolver.new
-        solver.on_message = ->(msg : String) {}
+        solver.on_message = ->(msg : String) { }
         solver.on_message.should_not be_nil
       end
 
       it "supports on_message in CbcCliSolver" do
         solver = Optima::CbcCliSolver.new
-        solver.on_message = ->(msg : String) {}
+        solver.on_message = ->(msg : String) { }
         solver.on_message.should_not be_nil
       end
     end
@@ -411,10 +411,10 @@ describe Optima do
         # Verify terms in resulting expressions
         e1 = exprs.to_unsafe[0]
         e2 = exprs.to_unsafe[1]
-        
+
         e1.terms[x.to_unsafe[0]].should eq(2.0)
         e1.terms[x.to_unsafe[1]].should eq(3.0)
-        
+
         e2.terms[x.to_unsafe[0]].should eq(4.0)
         e2.terms[x.to_unsafe[1]].should eq(5.0)
       end
@@ -425,20 +425,20 @@ describe Optima do
         coefs = Tensor.from_array([[1.0, 0.0], [0.0, 1.0]])
 
         exprs = coefs * x
-        
+
         # Element-wise comparison with scalar
         constrs1 = exprs <= 10.0
         constrs1.should be_a(Tensor(Optima::Constraint, CPU(Optima::Constraint)))
-        
+
         # Element-wise comparison with Tensor
         rhs = Tensor.from_array([5.0, 7.5])
         constrs2 = exprs <= rhs
         constrs2.should be_a(Tensor(Optima::Constraint, CPU(Optima::Constraint)))
-        
+
         # Add to model
         model << constrs1
         model.add_constraints(constrs2, names: ["c_first", "c_second"])
-        
+
         model.constraints.size.should eq(4)
         model.constraints[2].name.should eq("c_first")
         model.constraints[3].name.should eq("c_second")
@@ -446,4 +446,3 @@ describe Optima do
     end
   end
 end
-

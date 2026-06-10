@@ -24,7 +24,7 @@ setup_costs = {"Milan" => 1000.0, "Rome" => 1200.0, "Naples" => 900.0}
 # Cost to ship from warehouse to client
 shipping_costs = {
   {"Milan", "Client_1"} => 4.0, {"Milan", "Client_2"} => 5.0, {"Milan", "Client_3"} => 6.0, {"Milan", "Client_4"} => 8.0,
-  {"Rome", "Client_1"}  => 6.0, {"Rome", "Client_2"}  => 4.0, {"Rome", "Client_3"}  => 3.0, {"Rome", "Client_4"}  => 5.0,
+  {"Rome", "Client_1"} => 6.0, {"Rome", "Client_2"} => 4.0, {"Rome", "Client_3"} => 3.0, {"Rome", "Client_4"} => 5.0,
   {"Naples", "Client_1"} => 7.0, {"Naples", "Client_2"} => 6.0, {"Naples", "Client_3"} => 4.0, {"Naples", "Client_4"} => 3.0,
 }
 

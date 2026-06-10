@@ -15,7 +15,6 @@ require "./optima/glpk_cli_solver"
 require "./optima/solver_pool"
 
 module Optima
-  Log = ::Log.for("optima")
+  Log     = ::Log.for("optima")
   VERSION = "0.1.0"
 end
-

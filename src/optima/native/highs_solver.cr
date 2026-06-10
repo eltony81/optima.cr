@@ -94,7 +94,7 @@ module Optima
       model.constraints.each do |constraint|
         expr = constraint.expr
         num_nz = expr.terms.size
-        
+
         indices = Array(LibHighs::HighsInt).new(num_nz)
         values = Array(LibC::Double).new(num_nz)
 
@@ -143,7 +143,7 @@ module Optima
       # If Hessian is not empty, pass it to solver
       if !model.hessian.empty?
         dim = model.variables.size
-        
+
         hessian_starts = Array(LibHighs::HighsInt).new(dim + 1, 0)
         hessian_index = Array(LibHighs::HighsInt).new
         hessian_value = Array(LibC::Double).new
@@ -225,17 +225,17 @@ module Optima
       # 7. Map model status
       model_status = LibHighs.Highs_getModelStatus(@highs)
       status = case model_status
-      when 7  # kOptimal
-        SolverStatus::Optimal
-      when 8  # kInfeasible
-        SolverStatus::Infeasible
-      when 10 # kUnbounded
-        SolverStatus::Unbounded
-      when 9  # kUnboundedOrInfeasible
-        SolverStatus::InfeasibleOrUnbounded
-      else
-        SolverStatus::Unknown
-      end
+               when 7 # kOptimal
+                 SolverStatus::Optimal
+               when 8 # kInfeasible
+                 SolverStatus::Infeasible
+               when 10 # kUnbounded
+                 SolverStatus::Unbounded
+               when 9 # kUnboundedOrInfeasible
+                 SolverStatus::InfeasibleOrUnbounded
+               else
+                 SolverStatus::Unknown
+               end
 
       Optima::Log.info { "Optimization completed. Status: #{status}, Objective: #{@objective_value}" }
       status

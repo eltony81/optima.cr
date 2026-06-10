@@ -58,9 +58,9 @@ module Optima
             output: input_io,
             error: input_io
           )
-          
+
           input_io.close
-          
+
           output_io.each_line do |line|
             if log_to_console
               puts line
@@ -69,7 +69,7 @@ module Optima
               cb.call(line)
             end
           end
-          
+
           process_status = process.wait
         rescue ex
           raise SolverError.new("Failed to execute glpsol solver binary at '#{cmd_path}': #{ex.message}")
@@ -99,15 +99,15 @@ module Optima
         @objective_value = second_parts[2].to_f64
 
         status = case obj_status
-        when 5
-          SolverStatus::Optimal
-        when 3, 4
-          SolverStatus::Infeasible
-        when 6
-          SolverStatus::Unbounded
-        else
-          SolverStatus::Unknown
-        end
+                 when 5
+                   SolverStatus::Optimal
+                 when 3, 4
+                   SolverStatus::Infeasible
+                 when 6
+                   SolverStatus::Unbounded
+                 else
+                   SolverStatus::Unknown
+                 end
 
         row_offset = 2
         col_offset = 2 + num_rows

@@ -33,8 +33,8 @@ model.objective = costs.to_unsafe[0] * x.to_unsafe[0] + costs.to_unsafe[1] * x.t
 # Row 1: Energy output per unit of raw material (Oil: 10, Gas: 8, Coal: 6)
 # Row 2: Pollutant emissions per unit (Oil: 3, Gas: 2, Coal: 5)
 a = Tensor.from_array([
-  [10.0, 8.0, 6.0],  # Energy coefficients
-  [3.0, 2.0, 5.0]    # Pollutant coefficients
+  [10.0, 8.0, 6.0], # Energy coefficients
+  [3.0, 2.0, 5.0],  # Pollutant coefficients
 ])
 
 # 5. Perform matrix-vector multiplication yielding an Expression Tensor of shape [2]

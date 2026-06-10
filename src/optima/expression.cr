@@ -152,6 +152,7 @@ module Optima
         end
       end
     end
+
     def sparsify!(epsilon : Float64 = 1e-9) : self
       @terms.reject! { |_, coeff| coeff.abs < epsilon }
       self

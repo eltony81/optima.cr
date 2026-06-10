@@ -134,10 +134,10 @@ module Optima
       c = coeff.to_f64
       new_terms = Hash(Variable, Float64).new
       terms.each { |var, val| new_terms[var] = val * c }
-      
+
       new_quad = Hash(Tuple(Variable, Variable), Float64).new
       quad_terms.each { |key, val| new_quad[key] = val * c }
-      
+
       QuadraticExpression.new(new_terms, new_quad, constant * c)
     end
 
@@ -161,7 +161,7 @@ module Optima
       # Print linear terms
       expr = Expression.new(terms, constant)
       expr.to_s(io)
-      
+
       # Print quadratic terms
       quad_terms.each do |(v1, v2), coeff|
         if coeff == 0.0

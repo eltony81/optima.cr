@@ -72,7 +72,7 @@ if status.optimal?
   # 7. Run Sensitivity Analysis (Perturbation ranges)
   puts "\n--- Running Sensitivity Analysis ---"
   report = model.sensitivity_analysis(solver, delta: 1e-5)
-  
+
   # Print RHS sensitivity
   report.rhs_ranges.each do |constraint, (obj_minus, obj_plus)|
     puts "Constraint '#{constraint.name}' bounds sensitivity:"

@@ -145,7 +145,7 @@ module Optima
             elsif coeff < 0.0
               io << " - "
             end
-            
+
             val = coeff.abs
             if val == 1.0
               io << var.name
@@ -165,7 +165,7 @@ module Optima
         constraints.each_with_index do |c, idx|
           name = c.name || "c#{idx}"
           io << " " << name << ": "
-          
+
           if ru = c.range_upper
             io << -c.expr.constant << " <= "
           end
@@ -176,7 +176,7 @@ module Optima
             elsif coeff < 0.0
               io << " - "
             end
-            
+
             val = coeff.abs
             if val == 1.0
               io << var.name
@@ -266,11 +266,11 @@ module Optima
       model = Model.new("Parsed Model")
       section = :none
       var_map = {} of String => Variable
-      
+
       lp_string.each_line do |line|
         line = line.strip.gsub(/\s+/, " ")
         next if line.empty? || line.starts_with?("\\")
-        
+
         lower_line = line.downcase
         if lower_line.starts_with?("minimize")
           model.sense = ObjectiveSense::Minimize
@@ -309,7 +309,7 @@ module Optima
             name = nil
             constraint_content = line
           end
-          
+
           if constraint_content.includes?("<=") || constraint_content.includes?(">=") || constraint_content.includes?("=")
             op_indices = [] of {Int32, String}
             ["<=", ">=", "="].each do |op|
@@ -325,7 +325,7 @@ module Optima
               lower_val = constraint_content[0...op_indices[0][0]].strip.to_f64
               expr_text = constraint_content[op_indices[0][0] + op_indices[0][1].size...op_indices[1][0]].strip
               upper_val = constraint_content[op_indices[1][0] + op_indices[1][1].size..-1].strip.to_f64
-              
+
               expr = parse_expression(expr_text, model, var_map)
               expr.constant -= lower_val
               c = Constraint.new(expr, ConstraintType::GreaterThanOrEqual, name)
@@ -337,13 +337,13 @@ module Optima
               expr_text = constraint_content[0...idx].strip
               rhs_text = constraint_content[idx + op.size..-1].strip
               rhs = rhs_text.to_f64
-              
+
               expr = parse_expression(expr_text, model, var_map)
               expr.constant -= rhs
               type = case op
                      when "<=" then ConstraintType::LessThanOrEqual
                      when ">=" then ConstraintType::GreaterThanOrEqual
-                     else ConstraintType::Equal
+                     else           ConstraintType::Equal
                      end
               model.add_constraint(Constraint.new(expr, type, name))
             end
@@ -354,7 +354,7 @@ module Optima
             lower = parts[0].strip.to_f64
             var_name = parts[1].strip
             upper = parts[2].strip.to_f64
-            
+
             var = var_map[var_name] ||= model.variable(var_name)
             var.lower_bound = lower
             var.upper_bound = upper
@@ -407,7 +407,7 @@ module Optima
 
         if tok.to_f64?
           val = tok.to_f64 * sign
-          if i + 1 < tokens.size && !["+", "-", "<=", ">=", "="].includes?(tokens[i + 1]) && !tokens[i+1].to_f64?
+          if i + 1 < tokens.size && !["+", "-", "<=", ">=", "="].includes?(tokens[i + 1]) && !tokens[i + 1].to_f64?
             var_name = tokens[i + 1].strip
             var = var_map[var_name] ||= model.variable(var_name)
             expr.terms[var] = expr.terms.fetch(var, 0.0) + val
@@ -459,7 +459,7 @@ module Optima
     # Returns a SensitivityReport.
     def sensitivity_analysis(solver : Solver, delta : Float64 = 1e-5) : SensitivityReport
       report = SensitivityReport.new
-      
+
       base_status = solver.solve(self)
       unless base_status.optimal?
         raise ModelError.new("Sensitivity analysis requires an optimal base solution")
@@ -482,7 +482,7 @@ module Optima
           obj.terms[var] = original_obj_coeff[var] + delta
           solver.solve(self)
           obj_plus = solver.objective_value
-          
+
           obj.terms[var] = original_obj_coeff[var] - delta
           solver.solve(self)
           obj_minus = solver.objective_value

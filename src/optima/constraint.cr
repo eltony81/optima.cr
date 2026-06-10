@@ -33,7 +33,7 @@ module Optima
       if n = name
         io << n << ": "
       end
-      
+
       # Print in standard form for readability
       # e.g. 2*x + 3*y <= -constant
       io << expr.to_s

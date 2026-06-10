@@ -59,9 +59,9 @@ module Optima
             output: input_io,
             error: input_io
           )
-          
+
           input_io.close
-          
+
           output_io.each_line do |line|
             if log_to_console
               puts line
@@ -70,7 +70,7 @@ module Optima
               cb.call(line)
             end
           end
-          
+
           process_status = process.wait
         rescue ex
           raise SolverError.new("Failed to execute cbc solver binary at '#{cmd_path}': #{ex.message}")
