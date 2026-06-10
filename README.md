@@ -68,7 +68,7 @@ Add this to your application's `shard.yml`:
 ```yaml
 dependencies:
   optima:
-    github: user/optima.cr
+    github: eltony81/optima.cr
 ```
 
 Then run:
