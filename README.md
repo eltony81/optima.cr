@@ -5,7 +5,7 @@
 [![Language: Crystal](https://img.shields.io/badge/Language-Crystal-blue.svg)](https://crystal-lang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Optima.cr** is an algebraic modeling library written in Crystal for Linear Programming (LP) and Mixed-Integer Linear Programming (MILP). It provides a fluent, type-safe DSL using operator overloading (inspired by Python's PuLP) and binds natively via C-FFI to **HiGHS**, the state-of-the-art open-source C++ optimization solver.
+**Optima.cr** is an algebraic modeling library written in Crystal for Linear Programming (LP) and Mixed-Integer Linear Programming (MILP). It provides a fluent, type-safe DSL using operator overloading (inspired by Python's PuLP) and binds natively to **HiGHS**, the state-of-the-art open-source C++ optimization solver.
 
 ---
 
