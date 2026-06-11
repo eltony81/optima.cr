@@ -20,7 +20,6 @@
 *   **Warm Starting**: Load starting solution vectors directly to accelerate solver convergence.
 *   **Indicator Constraints**: Express conditional logic (if $z = 1 \implies Ax \le b$) with automated Big-M relaxation.
 *   **Model File I/O**: Save or import problems directly in standardized `.lp` and `.mps` file formats.
-*   **Native C-FFI Integration**: Communicates directly with HiGHS in-memory without spawning subprocesses or generating temporary files.
 *   **Safe Memory Lifecycle**: Automatic deallocation of C-pointers using Crystal's garbage collector finalization hooks.
 
 ---
