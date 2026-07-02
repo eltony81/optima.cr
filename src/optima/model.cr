@@ -10,7 +10,7 @@ module Optima
     property objectives : Array(Tuple(Expression, Float64))
 
     @[JSON::Field(ignore: true)]
-    property hessian : Hash(Tuple(Variable, Variable), Float64)
+    property hessian : Hash(Tuple(Variable, Variable), Float64) = {} of Tuple(Variable, Variable) => Float64
 
     @[JSON::Field(ignore: true)]
     @variable_counter : Int32 = 0
@@ -21,6 +21,47 @@ module Optima
       @variable_counter = 0
       @hessian = {} of Tuple(Variable, Variable) => Float64
       @objectives = [] of Tuple(Expression, Float64)
+    end
+
+    # `terms`/`quad_terms` Hash keys only carry a variable's name once serialized to
+    # JSON (see Variable#to_json_object_key), so the placeholder Variables produced
+    # while parsing them need to be swapped for the canonical instances in `variables`.
+    def self.new(pull : JSON::PullParser) : Model
+      model = previous_def
+
+      lookup = Hash(String, Variable).new
+      model.variables.each { |v| lookup[v.name] = v }
+
+      if obj = model.objective
+        remap_variables!(obj, lookup)
+      end
+      model.objectives.each { |(expr, _)| remap_variables!(expr, lookup) }
+      model.constraints.each do |c|
+        case expr = c.expr
+        when Expression
+          remap_variables!(expr, lookup)
+        when QuadraticExpression
+          remap_variables!(expr, lookup)
+        end
+      end
+
+      model
+    end
+
+    private def self.remap_variables!(expr : Expression, lookup : Hash(String, Variable))
+      remapped = Hash(Variable, Float64).new.compare_by_identity
+      expr.terms.each { |var, coeff| remapped[lookup[var.name]? || var] = coeff }
+      expr.terms = remapped
+    end
+
+    private def self.remap_variables!(expr : QuadraticExpression, lookup : Hash(String, Variable))
+      remapped_terms = Hash(Variable, Float64).new.compare_by_identity
+      expr.terms.each { |var, coeff| remapped_terms[lookup[var.name]? || var] = coeff }
+      expr.terms = remapped_terms
+
+      remapped_quad = Hash(Tuple(Variable, Variable), Float64).new
+      expr.quad_terms.each { |(v1, v2), coeff| remapped_quad[{lookup[v1.name]? || v1, lookup[v2.name]? || v2}] = coeff }
+      expr.quad_terms = remapped_quad
     end
 
     def add_objective(expr : Expression, weight : Float64 = 1.0)
@@ -135,6 +176,8 @@ module Optima
     end
 
     def to_lp : String
+      raise_on_quadratic_constraints!
+
       String.build do |io|
         io << (sense.maximize? ? "Maximize\n" : "Minimize\n")
         if obj = objective
@@ -201,7 +244,13 @@ module Optima
 
         io << "Bounds\n"
         variables.each do |v|
-          io << " " << v.lower_bound << " <= " << v.name << " <= "
+          io << " "
+          if v.lower_bound == -Float64::INFINITY
+            io << "-inf"
+          else
+            io << v.lower_bound
+          end
+          io << " <= " << v.name << " <= "
           if v.upper_bound == Float64::INFINITY
             io << "inf\n"
           else
@@ -226,6 +275,17 @@ module Optima
         end
 
         io << "End\n"
+      end
+    end
+
+    # Guards against constraints whose quadratic terms would otherwise be silently
+    # dropped by solvers/writers that only read Expression#terms/#constant.
+    def raise_on_quadratic_constraints!
+      constraints.each do |c|
+        expr = c.expr
+        if expr.is_a?(QuadraticExpression) && !expr.quad_terms.empty?
+          raise ModelError.new("Quadratic constraints are not supported (constraint #{c.name || c.id}); only quadratic objectives via Model#hessian are supported.")
+        end
       end
     end
 
@@ -312,12 +372,20 @@ module Optima
 
           if constraint_content.includes?("<=") || constraint_content.includes?(">=") || constraint_content.includes?("=")
             op_indices = [] of {Int32, String}
-            ["<=", ">=", "="].each do |op|
+            ["<=", ">="].each do |op|
               idx = 0
               while (idx = constraint_content.index(op, idx))
                 op_indices << {idx, op}
                 idx += op.size
               end
+            end
+            # Standalone "=" only (not the one inside an already-matched "<="/">=").
+            idx = 0
+            while (idx = constraint_content.index('=', idx))
+              unless idx > 0 && {'<', '>'}.includes?(constraint_content[idx - 1])
+                op_indices << {idx, "="}
+              end
+              idx += 1
             end
             op_indices.sort_by! { |x| x[0] }
 
@@ -441,6 +509,7 @@ module Optima
 
       original_constraints.each do |c|
         active_set.delete(c)
+        active_set.each_with_index { |con, idx| con.id = idx }
         @constraints = active_set.dup
 
         temp_status = solver.solve(self)
@@ -451,6 +520,7 @@ module Optima
         end
       end
 
+      original_constraints.each_with_index { |con, idx| con.id = idx }
       @constraints = original_constraints
       iis
     end
@@ -465,7 +535,7 @@ module Optima
         raise ModelError.new("Sensitivity analysis requires an optimal base solution")
       end
 
-      original_obj_coeff = Hash(Variable, Float64).new
+      original_obj_coeff = Hash(Variable, Float64).new.compare_by_identity
       if obj = @objective
         obj.terms.each do |var, coeff|
           original_obj_coeff[var] = coeff

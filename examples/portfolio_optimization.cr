@@ -47,7 +47,9 @@ model << {w_apple + w_google + w_tesla == 1.0, "Budget_Constraint"}
 
 # Constraint 2: Return target. Portfolio expected return must be at least 11% (0.11), but no more than 16% (0.16)
 # Demonstrates Range constraints: lower <= expr <= upper
-model << {0.11 <= r_apple * w_apple + r_google * w_google + r_tesla * w_tesla <= 0.16, "Target_Return_Range"}
+# (the first comparison must be parenthesized: Crystal desugars bare `a <= b <= c`
+# into `(a <= b) && (b <= c)`, which would silently drop the lower bound here)
+model << {(0.11 <= r_apple * w_apple + r_google * w_google + r_tesla * w_tesla) <= 0.16, "Target_Return_Range"}
 
 # 5. Initialize Native HiGHS Solver (since HiGHS supports native QP with Hessians)
 solver = Optima::HighsSolver.new

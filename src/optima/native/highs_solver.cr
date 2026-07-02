@@ -29,6 +29,7 @@ module Optima
       if model.variables.empty?
         raise ModelError.new("Cannot solve a model with zero variables")
       end
+      model.raise_on_quadratic_constraints!
 
       Optima::Log.info { "Solving optimization model '#{model.name}' with HiGHS..." }
 
@@ -80,13 +81,13 @@ module Optima
         # If it's mixed-integer/binary/semi, set column integrality
         if var.var_type.integer? || var.var_type.binary?
           # 1 = kHighsVarTypeInteger
-          LibHighs.Highs_changeColIntegrity(@highs, var.id, 1)
+          LibHighs.Highs_changeColIntegrality(@highs, var.id, 1)
         elsif var.var_type.semi_continuous?
           # 2 = kHighsVarTypeSemiContinuous
-          LibHighs.Highs_changeColIntegrity(@highs, var.id, 2)
+          LibHighs.Highs_changeColIntegrality(@highs, var.id, 2)
         elsif var.var_type.semi_integer?
           # 3 = kHighsVarTypeSemiInteger
-          LibHighs.Highs_changeColIntegrity(@highs, var.id, 3)
+          LibHighs.Highs_changeColIntegrality(@highs, var.id, 3)
         end
       end
 
@@ -184,7 +185,7 @@ module Optima
       end
 
       # 5. Run the solver
-      solve_status = LibHighs.Highs_solve(@highs)
+      solve_status = LibHighs.Highs_run(@highs)
       if @on_message
         LibHighs.Highs_stopCallback(@highs, 0)
       end
@@ -298,7 +299,7 @@ module Optima
     end
 
     def active_variables(model : Model, epsilon : Float64 = 1e-9) : Hash(Variable, Float64)
-      active = {} of Variable => Float64
+      active = ({} of Variable => Float64).compare_by_identity
       model.variables.each do |var|
         val = value(var)
         if val.abs > epsilon

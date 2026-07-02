@@ -4,16 +4,20 @@ module Optima
     property terms : Hash(Variable, Float64)
     property constant : Float64
 
+    # `Variable#==` is overloaded to build a DSL `Constraint`, not a Bool, so `terms`
+    # must compare keys by `object_id` (`compare_by_identity`) rather than `==` —
+    # otherwise Hash's own key-collision checks recurse back into `Variable#==`
+    # indefinitely (stack overflow) the moment two variables share a term.
     def initialize(terms : Hash(Variable, Float64), @constant : Float64 = 0.0)
-      @terms = terms.dup
+      @terms = terms.dup.compare_by_identity
     end
 
     def initialize(var : Variable, coeff : Float64 = 1.0, @constant : Float64 = 0.0)
-      @terms = {var => coeff}
+      @terms = {var => coeff}.compare_by_identity
     end
 
     def initialize(@constant : Float64 = 0.0)
-      @terms = Hash(Variable, Float64).new
+      @terms = Hash(Variable, Float64).new.compare_by_identity
     end
 
     def self.new(other : Expression)
@@ -58,7 +62,7 @@ module Optima
 
     def *(coeff : Number) : Expression
       c = coeff.to_f64
-      new_terms = Hash(Variable, Float64).new
+      new_terms = Hash(Variable, Float64).new.compare_by_identity
       terms.each do |var, val|
         new_terms[var] = val * c
       end

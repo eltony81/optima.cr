@@ -1,3 +1,17 @@
+struct Tuple
+  # Tuple(Variable, Variable) is used as a Hash key (QuadraticExpression#quad_terms,
+  # Model#hessian). Hash#compare_by_identity can't help here since Tuple itself has no
+  # object_id, and Variable#== builds a DSL Constraint rather than a Bool — so compare
+  # by variable identity directly instead of falling through to Variable#==.
+  def ==(other : self)
+    {% if T == {Optima::Variable, Optima::Variable} %}
+      self[0].same?(other[0]) && self[1].same?(other[1])
+    {% else %}
+      previous_def
+    {% end %}
+  end
+end
+
 module Optima
   class QuadraticExpression
     property terms : Hash(Variable, Float64)
@@ -5,7 +19,7 @@ module Optima
     property constant : Float64
 
     def initialize(terms : Hash(Variable, Float64), quad_terms : Hash(Tuple(Variable, Variable), Float64), @constant : Float64 = 0.0)
-      @terms = terms.dup
+      @terms = terms.dup.compare_by_identity
       @quad_terms = quad_terms.dup
     end
 
@@ -34,7 +48,7 @@ module Optima
     end
 
     def self.new(pull : JSON::PullParser)
-      terms = Hash(Variable, Float64).new
+      terms = Hash(Variable, Float64).new.compare_by_identity
       quad_terms = Hash(Tuple(Variable, Variable), Float64).new
       constant = 0.0
 
@@ -42,13 +56,22 @@ module Optima
         case key
         when "terms"
           pull.read_object do |var_name|
-            pull.read_float
+            terms[Variable.new(-1, var_name)] = pull.read_float
           end
         when "quad_terms"
           pull.read_array do
+            var1_name = ""
+            var2_name = ""
+            coeff = 0.0
             pull.read_object do |k|
-              pull.skip
+              case k
+              when "var1"  then var1_name = pull.read_string
+              when "var2"  then var2_name = pull.read_string
+              when "coeff" then coeff = pull.read_float
+              else              pull.skip
+              end
             end
+            quad_terms[{Variable.new(-1, var1_name), Variable.new(-1, var2_name)}] = coeff
           end
         when "constant"
           constant = pull.read_float
@@ -61,14 +84,14 @@ module Optima
     end
 
     def initialize(var1 : Variable, var2 : Variable, coeff : Float64 = 1.0)
-      @terms = Hash(Variable, Float64).new
+      @terms = Hash(Variable, Float64).new.compare_by_identity
       @quad_terms = Hash(Tuple(Variable, Variable), Float64).new
       @quad_terms[{var1, var2}] = coeff
       @constant = 0.0
     end
 
     def initialize(@constant : Float64 = 0.0)
-      @terms = Hash(Variable, Float64).new
+      @terms = Hash(Variable, Float64).new.compare_by_identity
       @quad_terms = Hash(Tuple(Variable, Variable), Float64).new
     end
 
@@ -132,7 +155,7 @@ module Optima
 
     def *(coeff : Number) : QuadraticExpression
       c = coeff.to_f64
-      new_terms = Hash(Variable, Float64).new
+      new_terms = Hash(Variable, Float64).new.compare_by_identity
       terms.each { |var, val| new_terms[var] = val * c }
 
       new_quad = Hash(Tuple(Variable, Variable), Float64).new

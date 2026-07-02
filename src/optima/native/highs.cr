@@ -37,8 +37,8 @@ module Optima
     fun Highs_addRow(highs : Void*, lower : LibC::Double, upper : LibC::Double, num_new_nz : HighsInt, index : HighsInt*, value : LibC::Double*) : HighsInt
 
     fun Highs_changeObjectiveSense(highs : Void*, sense : HighsInt) : HighsInt
-    fun Highs_changeColIntegrity(highs : Void*, col : HighsInt, integrity : HighsInt) : HighsInt
-    fun Highs_solve(highs : Void*) : HighsInt
+    fun Highs_changeColIntegrality(highs : Void*, col : HighsInt, integrality : HighsInt) : HighsInt
+    fun Highs_run(highs : Void*) : HighsInt
     fun Highs_setBoolOptionValue(highs : Void*, option : LibC::Char*, value : HighsInt) : HighsInt
     fun Highs_setDoubleOptionValue(highs : Void*, option : LibC::Char*, value : LibC::Double) : HighsInt
     fun Highs_readModel(highs : Void*, filename : LibC::Char*) : HighsInt

@@ -142,7 +142,7 @@ module Optima
     end
 
     def active_variables(model : Model, epsilon : Float64 = 1e-9) : Hash(Variable, Float64)
-      active = {} of Variable => Float64
+      active = ({} of Variable => Float64).compare_by_identity
       model.variables.each do |var|
         val = value(var)
         if val.abs > epsilon

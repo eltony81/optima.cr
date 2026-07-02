@@ -32,13 +32,43 @@ module Optima
     res
   end
 
+  # JSON has no representation for Infinity, but unbounded Variable bounds default to
+  # +/-Float64::INFINITY (e.g. every `upper_bound` unless set explicitly), so plain
+  # numeric JSON serialization raises JSON::Error for the common case. Round-trip
+  # infinities as sentinel strings instead.
+  module InfinityFloatConverter
+    def self.to_json(value : Float64, json : JSON::Builder)
+      if value.infinite?
+        json.string(value > 0 ? "Infinity" : "-Infinity")
+      else
+        json.number(value)
+      end
+    end
+
+    def self.from_json(pull : JSON::PullParser) : Float64
+      if pull.kind.string?
+        case pull.read_string
+        when "Infinity"  then Float64::INFINITY
+        when "-Infinity" then -Float64::INFINITY
+        else                  raise JSON::ParseException.new("Invalid Float64 bound", 0, 0)
+        end
+      else
+        pull.read_float
+      end
+    end
+  end
+
   class Variable
     include JSON::Serializable
 
     property id : Int32
     property name : String
     property var_type : VariableType
+
+    @[JSON::Field(converter: Optima::InfinityFloatConverter)]
     property lower_bound : Float64
+
+    @[JSON::Field(converter: Optima::InfinityFloatConverter)]
     property upper_bound : Float64
 
     def initialize(@id : Int32, @name : String, @var_type : VariableType = VariableType::Continuous, @lower_bound : Float64 = 0.0, @upper_bound : Float64 = Float64::INFINITY)
@@ -50,6 +80,12 @@ module Optima
 
     def to_json_object_key : String
       name
+    end
+
+    # Hash keys only carry the variable name; the full Variable (id/bounds/type) is
+    # reconciled against Model#variables by Model.new(pull) after parsing completes.
+    def self.from_json_object_key?(key : String) : Variable?
+      Variable.new(-1, key)
     end
 
     def +(other : Variable) : Expression
@@ -108,6 +144,13 @@ module Optima
     end
 
     def ==(other : Variable | Expression | Number) : Constraint
+      # Hash(Variable, V)/Tuple#== call `Object#==` to confirm key-collision matches
+      # (even for the very same object), which would otherwise recurse back into this
+      # DSL-overloaded `==` via Expression#- building a new Hash — an infinite loop.
+      # `x == x` degenerates to `0 == 0` anyway, so short-circuit on identity.
+      if other.is_a?(Variable) && same?(other)
+        return Constraint.new(Expression.new(0.0), ConstraintType::Equal)
+      end
       Expression.new(self) == other
     end
   end

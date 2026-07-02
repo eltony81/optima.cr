@@ -209,10 +209,12 @@ model.hessian[{x, y}] = -1.0
 ```
 
 ### 9. Range Constraints
-Express range constraints using natural double-comparison syntax:
+Express range constraints using double-comparison syntax. The first comparison must be
+parenthesized: Crystal desugars a bare `a <= b <= c` into `(a <= b) && (b <= c)`, which
+would silently discard the lower bound since `<=` here returns a `Constraint`, not a `Bool`.
 ```crystal
 # Define bounds mathematically in a single chained statement: 10 <= x + y <= 20
-model << {10 <= x + y <= 20, "resource_range"}
+model << {(10 <= x + y) <= 20, "resource_range"}
 ```
 
 ### 10. Naming constraints with tuple appending

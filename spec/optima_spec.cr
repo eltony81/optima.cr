@@ -137,7 +137,7 @@ describe Optima do
       x = model.variable("x")
       y = model.variable("y")
 
-      c = 10 <= x + y <= 20
+      c = (10 <= x + y) <= 20
       c.constraint_type.should eq(Optima::ConstraintType::GreaterThanOrEqual)
       c.expr.terms[x].should eq(1.0)
       c.expr.terms[y].should eq(1.0)
@@ -162,8 +162,8 @@ describe Optima do
 
       lp_string = model.to_lp
       lp_string.should contain("Maximize")
-      lp_string.should contain("obj: 2 x")
-      lp_string.should contain("limit: x <= 3")
+      lp_string.should contain("obj: 2.0 x")
+      lp_string.should contain("limit: x <= 3.0")
       lp_string.should contain("Bounds")
       lp_string.should contain("0.0 <= x <= 5.0")
       lp_string.should contain("End")
