@@ -627,6 +627,103 @@ describe Optima do
         solver.reduced_cost(x).should eq(0.0)
         solver.shadow_price(c).should eq(0.0)
       end
+
+      it "matches HighsSolver's primal/dual values on a real CBC solve" do
+        pending!("cbc not found on PATH") unless Process.find_executable("cbc")
+
+        model = Optima::Model.new("Cross-check", Optima::ObjectiveSense::Maximize)
+        x = model.variable("x")
+        y = model.variable("y")
+        model.objective = 2 * x + 3 * y
+        model.add_constraint(x + y <= 4.0, "Capacity")
+
+        solver = Optima::CbcCliSolver.new
+        solver.log_to_console = false
+        status = solver.solve(model)
+
+        status.optimal?.should be_true
+        solver.objective_value.should eq(12.0)
+        solver.value(x).should eq(0.0)
+        solver.value(y).should eq(4.0)
+        solver.reduced_cost(x).should eq(-1.0)
+      end
+
+      it "matches HighsSolver's primal/dual values on a real GLPK solve" do
+        pending!("glpsol not found on PATH") unless Process.find_executable("glpsol")
+
+        model = Optima::Model.new("Cross-check", Optima::ObjectiveSense::Maximize)
+        x = model.variable("x")
+        y = model.variable("y")
+        model.objective = 2 * x + 3 * y
+        capacity = model.add_constraint(x + y <= 4.0, "Capacity")
+
+        solver = Optima::GlpkCliSolver.new
+        solver.log_to_console = false
+        status = solver.solve(model)
+
+        status.optimal?.should be_true
+        solver.objective_value.should eq(12.0)
+        solver.value(x).should eq(0.0)
+        solver.value(y).should eq(4.0)
+        solver.reduced_cost(x).should eq(-1.0)
+        solver.shadow_price(capacity).should eq(3.0)
+      end
+
+      it "solves a MIP with CBC and GLPK, where duals stay 0.0 (none exist for an integer program)" do
+        build_knapsack = -> {
+          m = Optima::Model.new("Knapsack", Optima::ObjectiveSense::Maximize)
+          a = m.variable("a", category: Optima::VariableType::Binary)
+          b = m.variable("b", category: Optima::VariableType::Binary)
+          cc = m.variable("c", category: Optima::VariableType::Binary)
+          m.objective = 8 * a + 3 * b + 10 * cc
+          m.add_constraint(2 * a + 1 * b + 13 * cc <= 15.0, "Weight")
+          {m, a, b, cc}
+        }
+
+        if Process.find_executable("cbc")
+          model, a, _, cc = build_knapsack.call
+          solver = Optima::CbcCliSolver.new
+          solver.log_to_console = false
+          solver.solve(model).optimal?.should be_true
+          solver.objective_value.should eq(18.0)
+          solver.value(a).should eq(1.0)
+          solver.value(cc).should eq(1.0)
+        end
+
+        if Process.find_executable("glpsol")
+          model, a, _, cc = build_knapsack.call
+          solver = Optima::GlpkCliSolver.new
+          solver.log_to_console = false
+          solver.solve(model).optimal?.should be_true
+          solver.objective_value.should eq(18.0)
+          solver.value(a).should eq(1.0)
+          solver.value(cc).should eq(1.0)
+          solver.reduced_cost(a).should eq(0.0)
+        end
+      end
+    end
+
+    describe "Model#to_lp / #variable_dict edge cases (CBC/GLPK LP-format safety)" do
+      it "writes an explicitly-signed +inf, which GLPK's CPLEX-LP reader requires" do
+        model = Optima::Model.new("Infinity Model")
+        model.variable("x")
+        model.to_lp.should contain("+inf")
+        model.to_lp.should_not contain(" <= inf\n")
+      end
+
+      it "generates LP-identifier-safe names for variable_dict with Tuple indices" do
+        model = Optima::Model.new("Tuple Index Model")
+        indices = [{"Milan", "Client_1"}, {"Rome", "Client_2"}]
+        x = model.variable_dict("x", indices)
+
+        x[{"Milan", "Client_1"}].name.should eq("x_Milan_Client_1")
+        x[{"Rome", "Client_2"}].name.should eq("x_Rome_Client_2")
+        model.variables.each do |v|
+          v.name.should_not contain(" ")
+          v.name.should_not contain("\"")
+          v.name.should_not contain("{")
+        end
+      end
     end
   end
 end

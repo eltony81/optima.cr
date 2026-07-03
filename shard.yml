@@ -1,5 +1,5 @@
 name: optima
-version: 0.3.0
+version: 0.3.1
 description: Algebraic modeling library for Linear and Mixed-Integer Programming in Crystal with HiGHS bindings and vectorized modeling.
 homepage: https://github.com/eltony81/optima.cr
 repository: https://github.com/eltony81/optima.cr

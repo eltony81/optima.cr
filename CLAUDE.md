@@ -90,10 +90,24 @@ The CBC/GLPK solvers additionally require the `cbc` / `glpsol` binaries to be on
 - `CbcCliSolver` / `GlpkCliSolver` (`cbc_cli_solver.cr`, `glpk_cli_solver.cr`) instead shell out to
   the `cbc`/`glpsol` binaries: they write `model.to_lp` to a temp `.optima_tmp/` file, run the
   process, and parse the resulting solution file. These key solutions by variable *name* rather
-  than ID (unlike HighsSolver, which keys by integer ID). Both also parse the dual-value column
-  their solution file formats already include (CBC's "dj" 4th column → `reduced_cost` only, no
-  row duals in that file format at all; GLPK's plain-format 3rd column on both row and column
-  lines → `reduced_cost` and `shadow_price`, `0.0` for MIP solutions which have no dual values).
+  than ID (unlike HighsSolver, which keys by integer ID). On Arch, install them as `coin-or-cbc`
+  (binary is `cbc`) and `glpk` (binary is `glpsol`) — neither package name matches the binary name.
+  - CBC's `.sol` format is one line per variable: `<idx> <name> <value> <dj>` - the 4th column feeds
+    `reduced_cost`; that format has no row-level duals at all, so CbcCliSolver has no `shadow_price`.
+  - GlpkCliSolver parses glpsol 5.x's actual `glp_write_sol` plain-text format, verified against a
+    real install rather than assumed: `c ...` comment lines (including a human-readable `c Status:
+    <text>` used for status mapping), a `s bas <m> <n> <p_stat> <d_stat> <obj>` (LP) or
+    `s mip <m> <n> <status> <obj>` (MIP) summary line, then one `i <row> ...`/`j <col> ...` line per
+    row/column in order. LP rows/cols carry a trailing dual (5 fields); MIP ones don't (3 fields,
+    no dual - none exists for an integer program). This is *not* the older positional
+    "m n / obj / row-lines / col-lines" layout some GLPK docs describe - if `crystal spec` ever
+    starts failing GLPK-solve specs after a glpsol upgrade, dump a real `.sol` file and recheck.
+  - `Model#to_lp` must emit an explicitly-signed `+inf`/`-inf` for unbounded bounds - GLPK's
+    CPLEX-LP reader rejects a bare `inf` ("missing upper bound") even though HiGHS's own reader
+    accepts it, since HighsSolver never round-trips through `to_lp` at all.
+  - `Model#variable_dict` joins `Tuple` indices with `_` rather than interpolating the tuple
+    directly (which produces `x_{"Milan", "Client_1"}` - spaces/quotes/braces HighsSolver's direct
+    FFI calls don't care about, but that break the CBC/GLPK LP-format tokenizer).
 - `SolverPool` is a thread-safe `Deque(HighsSolver)` pool (checkout/checkin, or `use(&block)`) for
   reusing solver instances/handles across concurrent solves.
 

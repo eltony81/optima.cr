@@ -341,7 +341,9 @@ sh ext/compile_check.sh
 ```
 
 ### 23. Alternative Solver Backend (CbcCliSolver)
-If you don't have the HiGHS C library installed, you can use the COIN-OR CBC command-line solver instead:
+If you don't have the HiGHS C library installed, you can use the COIN-OR CBC command-line solver instead.
+Requires the `cbc` binary on `PATH` (Arch/Manjaro: `sudo pacman -S coin-or-cbc` - note the package name
+doesn't match the binary name; Ubuntu/Debian: `sudo apt-get install coinor-cbc`):
 ```crystal
 # Initialize the CBC CLI solver
 solver = Optima::CbcCliSolver.new
@@ -422,7 +424,9 @@ model.solve(solver)
 ```
 
 ### 29. GLPK CLI Solver Backend
-Use the GNU Linear Programming Kit (GLPK) `glpsol` executable as a backend solver:
+Use the GNU Linear Programming Kit (GLPK) `glpsol` executable as a backend solver.
+Requires the `glpsol` binary on `PATH` (Arch/Manjaro: `sudo pacman -S glpk`;
+Ubuntu/Debian: `sudo apt-get install glpk-utils`):
 ```crystal
 # Initialize GLPK CLI solver
 solver = Optima::GlpkCliSolver.new

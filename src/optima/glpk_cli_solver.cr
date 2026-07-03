@@ -88,56 +88,58 @@ module Optima
           return SolverStatus::Infeasible
         end
 
-        # Parse GLPK solution file
-        lines = File.read_lines(sol_path).reject { |l| l.strip.empty? || l.strip.starts_with?("#") }
-        if lines.empty?
+        # Parse GLPK's plain solution file (glp_write_sol format; verified against a
+        # real glpsol 5.0 install - this is *not* the older positional "m n / stat obj
+        # / row lines / col lines" layout some GLPK docs describe):
+        #   c ...                                   comment/metadata lines, incl. "c Status: <text>"
+        #   s bas <m> <n> <p_stat> <d_stat> <obj>    simplex (LP) solution summary
+        #   s mip <m> <n> <status> <obj>             MIP solution summary (no separate p/d_stat)
+        #   i <row> <stat> <prim> <dual>             one line per row, in row order - LP only
+        #   i <row> <prim>                           one line per row - MIP (no dual: none exists)
+        #   j <col> <stat> <prim> <dual>             one line per column, in column order - LP only
+        #   j <col> <prim>                           one line per column - MIP
+        #   e o f                                    end marker
+        lines = File.read_lines(sol_path)
+        summary_line = lines.find(&.starts_with?("s "))
+        if lines.empty? || !summary_line
           return SolverStatus::Unknown
         end
 
-        # Line 0: num_rows num_cols
-        first_parts = lines[0].strip.split
-        num_rows = first_parts[0].to_i
-        num_cols = first_parts[1].to_i
+        summary_parts = summary_line.strip.split
+        @objective_value = summary_parts.last.to_f64? || 0.0
 
-        # Line 1: obj_sense obj_status obj_value
-        second_parts = lines[1].strip.split
-        obj_status = second_parts[1].to_i
-        @objective_value = second_parts[2].to_f64
-
-        status = case obj_status
-                 when 5
+        status_text = lines.find(&.starts_with?("c Status:")).try(&.sub("c Status:", "").strip) || ""
+        status = if status_text.includes?("OPTIMAL")
                    SolverStatus::Optimal
-                 when 3, 4
+                 elsif status_text.includes?("INFEASIBLE") || status_text.includes?("EMPTY") || status_text.includes?("NO ")
                    SolverStatus::Infeasible
-                 when 6
+                 elsif status_text.includes?("UNBOUNDED")
                    SolverStatus::Unbounded
                  else
                    SolverStatus::Unknown
                  end
 
-        row_offset = 2
-        col_offset = 2 + num_rows
+        row_lines = lines.select(&.starts_with?("i "))
+        col_lines = lines.select(&.starts_with?("j "))
 
-        # Row/col lines are "<stat> <prim> <dual>" for LP problems; MIP solutions omit
-        # the trailing dual column entirely, so shadow_price/reduced_cost stay 0.0 for
-        # those (there is no meaningful dual value to report for an integer program).
+        # LP rows/cols carry a trailing dual value (5 fields); MIP rows/cols don't (3
+        # fields, no dual - there is no meaningful dual value for an integer program),
+        # so shadow_price/reduced_cost stay at their 0.0 default for those.
         model.constraints.each_with_index do |c, idx|
-          line_idx = row_offset + idx
-          next unless line_idx < lines.size
-          parts = lines[line_idx].strip.split
-          next unless parts.size >= 3 && (cid = c.id)
-          @shadow_prices[cid] = parts[2].to_f64? || 0.0
+          next unless idx < row_lines.size
+          parts = row_lines[idx].strip.split
+          next unless parts.size >= 5 && (cid = c.id)
+          @shadow_prices[cid] = parts[4].to_f64? || 0.0
         end
 
         model.variables.each_with_index do |var, idx|
-          line_idx = col_offset + idx
-          if line_idx < lines.size
-            parts = lines[line_idx].strip.split
-            val = parts[1].to_f64? || 0.0
-            @solution[var.name] = val
-            if parts.size >= 3
-              @reduced_costs[var.name] = parts[2].to_f64? || 0.0
-            end
+          next unless idx < col_lines.size
+          parts = col_lines[idx].strip.split
+          if parts.size >= 5
+            @solution[var.name] = parts[3].to_f64? || 0.0
+            @reduced_costs[var.name] = parts[4].to_f64? || 0.0
+          elsif parts.size >= 3
+            @solution[var.name] = parts[2].to_f64? || 0.0
           end
         end
 

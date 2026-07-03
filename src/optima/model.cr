@@ -143,7 +143,12 @@ module Optima
     def variable_dict(name : String, indices : Enumerable(T), lower_bound : Float64 = 0.0, upper_bound : Float64 = Float64::INFINITY, category : VariableType = VariableType::Continuous) : Hash(T, Variable) forall T
       dict = {} of T => Variable
       indices.each do |idx|
-        dict[idx] = variable("#{name}_#{idx}", lower_bound, upper_bound, category)
+        # A raw Tuple index (e.g. {"Milan", "Client_1"}) interpolates as
+        # `{"Milan", "Client_1"}` - spaces/quotes/braces that HighsSolver's direct FFI
+        # calls don't care about, but that break the CBC/GLPK CLI solvers' LP-format
+        # tokenizer. Join Tuple indices with "_" instead for an identifier-safe name.
+        suffix = idx.is_a?(Tuple) ? idx.join("_") : idx.to_s
+        dict[idx] = variable("#{name}_#{suffix}", lower_bound, upper_bound, category)
       end
       dict
     end
@@ -354,7 +359,9 @@ module Optima
           end
           io << " <= " << v.name << " <= "
           if v.upper_bound == Float64::INFINITY
-            io << "inf\n"
+            # GLPK's CPLEX-LP reader requires the explicit sign - bare "inf" (unlike
+            # "-inf") fails with "missing upper bound" even though HiGHS accepts it.
+            io << "+inf\n"
           else
             io << v.upper_bound << "\n"
           end
