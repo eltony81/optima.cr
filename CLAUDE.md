@@ -55,7 +55,16 @@ The CBC/GLPK solvers additionally require the `cbc` / `glpsol` binaries to be on
   - `Model#compute_iis` and `Model#sensitivity_analysis` are solved-model diagnostics implemented
     by repeatedly mutating and re-solving the model with a given `Solver` (deletion filter for IIS,
     finite-difference perturbation for ranging) — they are solver-agnostic, working purely through
-    the `Solver` interface.
+    the `Solver` interface. `HighsSolver#sensitivity_analysis` is a separate, solver-specific
+    override that calls HiGHS's native `Highs_getRanging` once instead — exact and much faster, but
+    reports the actual coefficient/RHS range rather than `Model#sensitivity_analysis`'s
+    delta-perturbed objective value; see the doc comment on each before assuming they match.
+  - `Model#remove_constraint`/`#remove_variable` renumber the remaining `.id`s to keep matching
+    their array position — the same invariant `compute_iis` relies on (see below) — and
+    `#remove_variable` raises if the variable is still referenced by the objective, a constraint,
+    or the Hessian, since nothing here can guess how to patch up a dangling reference.
+  - `Model#dup` deep-clones variables/objective/constraints/hessian with entirely fresh `Variable`
+    instances (not `Reference#dup`'s shallow copy) so the clone and original can't cross-talk.
 - `vectorized.cr` layers `num.cr` (`Tensor`) support on top of the DSL: it reopens `Tensor(T, S)`
   to add matrix/vector multiplication (`Float64 Tensor * Variable/Expression Tensor` → element-wise
   dot-product `Expression`s) and element-wise `<=`/`>=`/`==` producing `Constraint` tensors. This is
@@ -71,11 +80,20 @@ The CBC/GLPK solvers additionally require the `cbc` / `glpsol` binaries to be on
   `Highs_addCol`/`Highs_addRow` column-by-column/row-by-row using `Variable#id` as the column index.
   It destroys and recreates the underlying `Highs_create` handle on every `solve` call to avoid
   state leaking between solves, and uses `Box(HighsSolver)` to pass `self` through the C callback
-  (`on_message`) for streaming solver log lines.
+  (`on_message`) for streaming solver log lines. Only ~25 of HiGHS's ~176 exported `Highs_*`
+  functions are bound (`native/highs.cr`) — when adding more, get the exact signature from
+  `/usr/include/highs/interfaces/highs_c_api.h` (installed alongside `libhighs` on Arch) rather
+  than guessing; an FFI signature mismatch is a memory-safety bug, not just a wrong answer.
+  `threads=`/`presolve=` are applied fresh in `#solve` (`Highs_setIntOptionValue`/
+  `Highs_setStringOptionValue`) since the handle itself is recreated every call;
+  `warm_start_basis=`/`#get_basis` wrap `Highs_setBasis`/`Highs_getBasis`.
 - `CbcCliSolver` / `GlpkCliSolver` (`cbc_cli_solver.cr`, `glpk_cli_solver.cr`) instead shell out to
   the `cbc`/`glpsol` binaries: they write `model.to_lp` to a temp `.optima_tmp/` file, run the
   process, and parse the resulting solution file. These key solutions by variable *name* rather
-  than ID (unlike HighsSolver, which keys by integer ID).
+  than ID (unlike HighsSolver, which keys by integer ID). Both also parse the dual-value column
+  their solution file formats already include (CBC's "dj" 4th column → `reduced_cost` only, no
+  row duals in that file format at all; GLPK's plain-format 3rd column on both row and column
+  lines → `reduced_cost` and `shadow_price`, `0.0` for MIP solutions which have no dual values).
 - `SolverPool` is a thread-safe `Deque(HighsSolver)` pool (checkout/checkin, or `use(&block)`) for
   reusing solver instances/handles across concurrent solves.
 

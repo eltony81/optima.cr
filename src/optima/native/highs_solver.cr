@@ -1,10 +1,30 @@
 module Optima
+  # A HiGHS simplex basis (which columns/rows are basic vs. at a bound), captured via
+  # HighsSolver#get_basis and replayed via HighsSolver#warm_start_basis= to warm-start
+  # a subsequent solve of a similar model - the standard, more effective alternative to
+  # seeding a raw solution vector (HighsSolver#set_solution).
+  struct Basis
+    property col_status : Array(Int32)
+    property row_status : Array(Int32)
+
+    def initialize(@col_status : Array(Int32), @row_status : Array(Int32))
+    end
+  end
+
   class HighsSolver < Solver
     property time_limit : Float64?
     property mip_gap : Float64?
     property log_to_console : Bool = false
     property path : String?
     property on_message : Proc(String, Void)?
+
+    # Number of threads HiGHS may use (0 = automatic). See Highs_setIntOptionValue("threads").
+    property threads : Int32?
+    # Presolve mode: "on", "off", or "choose" (HiGHS's default). Any other value is
+    # rejected by HiGHS itself (Highs_setStringOptionValue returns non-zero).
+    property presolve : String?
+    # Applied right before Highs_run on the next #solve call. See Basis.
+    property warm_start_basis : Basis?
 
     @highs : Void*
     @objective_value : Float64 = 0.0
@@ -49,6 +69,15 @@ module Optima
       end
       if gap = @mip_gap
         LibHighs.Highs_setDoubleOptionValue(@highs, "mip_rel_gap", gap.to_f64)
+      end
+      if n = @threads
+        LibHighs.Highs_setIntOptionValue(@highs, "threads", n)
+      end
+      if mode = @presolve
+        status = LibHighs.Highs_setStringOptionValue(@highs, "presolve", mode)
+        if status != 0
+          raise ModelError.new(%(Invalid presolve mode "#{mode}" - must be "on", "off", or "choose"))
+        end
       end
 
       if @on_message
@@ -185,6 +214,9 @@ module Optima
       end
 
       # 5. Run the solver
+      if basis = @warm_start_basis
+        LibHighs.Highs_setBasis(@highs, basis.col_status.to_unsafe, basis.row_status.to_unsafe)
+      end
       solve_status = LibHighs.Highs_run(@highs)
       if @on_message
         LibHighs.Highs_stopCallback(@highs, 0)
@@ -234,6 +266,10 @@ module Optima
                  SolverStatus::Unbounded
                when 9 # kUnboundedOrInfeasible
                  SolverStatus::InfeasibleOrUnbounded
+               when 13, 14, 16, 17 # kTimeLimit, kIterationLimit, kSolutionLimit, kInterrupt
+                 # Solve was cut short by time_limit/mip_gap/a callback rather than
+                 # proving optimality/infeasibility - distinct from a genuine Unknown.
+                 SolverStatus::UserAborted
                else
                  SolverStatus::Unknown
                end
@@ -278,6 +314,75 @@ module Optima
         Pointer(Float64).null,
         Pointer(Float64).null
       ) == 0
+    end
+
+    # Captures the basis of the most recent solve, to later replay via
+    # #warm_start_basis= on a similar model. Only meaningful after a solve.
+    def get_basis(model : Model) : Basis
+      col_status = Array(Int32).new(model.variables.size, 0)
+      row_status = Array(Int32).new(model.constraints.size, 0)
+      LibHighs.Highs_getBasis(@highs, col_status.to_unsafe, row_status.to_unsafe)
+      Basis.new(col_status, row_status)
+    end
+
+    # Single-solve alternative to Model#sensitivity_analysis, using HiGHS's native
+    # ranging routine instead of perturb-and-resolve. Note the two report different
+    # things: Model#sensitivity_analysis reports the *objective value* at a small
+    # (+/-delta) perturbation of each coefficient/RHS (a local derivative estimate),
+    # while this reports the actual [min, max] range each coefficient/RHS can take
+    # *without changing the optimal basis* - the textbook LP sensitivity range, exact
+    # rather than delta-approximated, and typically a much wider interval.
+    def sensitivity_analysis(model : Model) : SensitivityReport
+      status = solve(model)
+      raise ModelError.new("Sensitivity analysis requires an optimal base solution") unless status.optimal?
+
+      num_col = model.variables.size
+      num_row = model.constraints.size
+
+      col_cost_up_value = Array(Float64).new(num_col, 0.0)
+      col_cost_up_objective = Array(Float64).new(num_col, 0.0)
+      col_cost_up_in_var = Array(Int32).new(num_col, 0)
+      col_cost_up_ou_var = Array(Int32).new(num_col, 0)
+      col_cost_dn_value = Array(Float64).new(num_col, 0.0)
+      col_cost_dn_objective = Array(Float64).new(num_col, 0.0)
+      col_cost_dn_in_var = Array(Int32).new(num_col, 0)
+      col_cost_dn_ou_var = Array(Int32).new(num_col, 0)
+      col_bound_up_value = Array(Float64).new(num_col, 0.0)
+      col_bound_up_objective = Array(Float64).new(num_col, 0.0)
+      col_bound_up_in_var = Array(Int32).new(num_col, 0)
+      col_bound_up_ou_var = Array(Int32).new(num_col, 0)
+      col_bound_dn_value = Array(Float64).new(num_col, 0.0)
+      col_bound_dn_objective = Array(Float64).new(num_col, 0.0)
+      col_bound_dn_in_var = Array(Int32).new(num_col, 0)
+      col_bound_dn_ou_var = Array(Int32).new(num_col, 0)
+      row_bound_up_value = Array(Float64).new(num_row, 0.0)
+      row_bound_up_objective = Array(Float64).new(num_row, 0.0)
+      row_bound_up_in_var = Array(Int32).new(num_row, 0)
+      row_bound_up_ou_var = Array(Int32).new(num_row, 0)
+      row_bound_dn_value = Array(Float64).new(num_row, 0.0)
+      row_bound_dn_objective = Array(Float64).new(num_row, 0.0)
+      row_bound_dn_in_var = Array(Int32).new(num_row, 0)
+      row_bound_dn_ou_var = Array(Int32).new(num_row, 0)
+
+      status_code = LibHighs.Highs_getRanging(
+        @highs,
+        col_cost_up_value.to_unsafe, col_cost_up_objective.to_unsafe, col_cost_up_in_var.to_unsafe, col_cost_up_ou_var.to_unsafe,
+        col_cost_dn_value.to_unsafe, col_cost_dn_objective.to_unsafe, col_cost_dn_in_var.to_unsafe, col_cost_dn_ou_var.to_unsafe,
+        col_bound_up_value.to_unsafe, col_bound_up_objective.to_unsafe, col_bound_up_in_var.to_unsafe, col_bound_up_ou_var.to_unsafe,
+        col_bound_dn_value.to_unsafe, col_bound_dn_objective.to_unsafe, col_bound_dn_in_var.to_unsafe, col_bound_dn_ou_var.to_unsafe,
+        row_bound_up_value.to_unsafe, row_bound_up_objective.to_unsafe, row_bound_up_in_var.to_unsafe, row_bound_up_ou_var.to_unsafe,
+        row_bound_dn_value.to_unsafe, row_bound_dn_objective.to_unsafe, row_bound_dn_in_var.to_unsafe, row_bound_dn_ou_var.to_unsafe
+      )
+      raise SolverError.new("Highs_getRanging failed with status #{status_code}") if status_code != 0
+
+      report = SensitivityReport.new
+      model.variables.each_with_index do |var, i|
+        report.obj_coefficient_ranges[var] = {col_cost_dn_value[i], col_cost_up_value[i]}
+      end
+      model.constraints.each_with_index do |c, i|
+        report.rhs_ranges[c] = {row_bound_dn_value[i], row_bound_up_value[i]}
+      end
+      report
     end
 
     def simplex_iteration_count : Int32

@@ -12,9 +12,13 @@ module Optima
 
     @objective_value : Float64 = 0.0
     @solution : Hash(String, Float64)
+    @reduced_costs : Hash(String, Float64)
+    @shadow_prices : Hash(Int32, Float64)
 
     def initialize
       @solution = {} of String => Float64
+      @reduced_costs = {} of String => Float64
+      @shadow_prices = {} of Int32 => Float64
     end
 
     def solve(model : Model) : SolverStatus
@@ -25,6 +29,8 @@ module Optima
       Optima::Log.info { "Solving optimization model '#{model.name}' with GLPK CLI..." }
 
       @solution.clear
+      @reduced_costs.clear
+      @shadow_prices.clear
       @objective_value = 0.0
 
       dir = File.join(Dir.current, ".optima_tmp")
@@ -112,12 +118,26 @@ module Optima
         row_offset = 2
         col_offset = 2 + num_rows
 
+        # Row/col lines are "<stat> <prim> <dual>" for LP problems; MIP solutions omit
+        # the trailing dual column entirely, so shadow_price/reduced_cost stay 0.0 for
+        # those (there is no meaningful dual value to report for an integer program).
+        model.constraints.each_with_index do |c, idx|
+          line_idx = row_offset + idx
+          next unless line_idx < lines.size
+          parts = lines[line_idx].strip.split
+          next unless parts.size >= 3 && (cid = c.id)
+          @shadow_prices[cid] = parts[2].to_f64? || 0.0
+        end
+
         model.variables.each_with_index do |var, idx|
           line_idx = col_offset + idx
           if line_idx < lines.size
             parts = lines[line_idx].strip.split
             val = parts[1].to_f64? || 0.0
             @solution[var.name] = val
+            if parts.size >= 3
+              @reduced_costs[var.name] = parts[2].to_f64? || 0.0
+            end
           end
         end
 
@@ -139,6 +159,21 @@ module Optima
 
     def objective_value : Float64
       @objective_value
+    end
+
+    # The 3rd ("dual") column from GLPK's plain column output. 0.0 for MIP solutions,
+    # which have no meaningful reduced cost.
+    def reduced_cost(variable : Variable) : Float64
+      @reduced_costs.fetch(variable.name, 0.0)
+    end
+
+    # The 3rd ("dual") column from GLPK's plain row output. 0.0 for MIP solutions.
+    def shadow_price(constraint : Constraint) : Float64
+      if cid = constraint.id
+        @shadow_prices.fetch(cid, 0.0)
+      else
+        0.0
+      end
     end
 
     def active_variables(model : Model, epsilon : Float64 = 1e-9) : Hash(Variable, Float64)

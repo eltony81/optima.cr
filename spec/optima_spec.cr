@@ -444,5 +444,189 @@ describe Optima do
         model.constraints[3].name.should eq("c_second")
       end
     end
+
+    describe "Model#remove_constraint and #remove_variable" do
+      it "removes a constraint and renumbers the remaining ids" do
+        model = Optima::Model.new("Remove Constraint Model")
+        x = model.variable("x")
+        y = model.variable("y")
+        c1 = model.add_constraint(x + y <= 5.0, "c1")
+        c2 = model.add_constraint(y <= 3.0, "c2")
+        c3 = model.add_constraint(x <= 3.0, "c3")
+
+        model.remove_constraint(c2)
+
+        model.constraints.map(&.name).should eq(["c1", "c3"])
+        model.constraints.map(&.id).should eq([0, 1])
+        c1.id.should eq(0)
+        c3.id.should eq(1)
+      end
+
+      it "raises when removing a constraint that isn't in the model" do
+        model = Optima::Model.new("Remove Constraint Model")
+        x = model.variable("x")
+        c = model.add_constraint(x <= 5.0, "c")
+        model.remove_constraint(c)
+
+        expect_raises(Optima::ModelError) do
+          model.remove_constraint(c)
+        end
+      end
+
+      it "removes an unreferenced variable and renumbers the remaining ids" do
+        model = Optima::Model.new("Remove Variable Model")
+        x = model.variable("x")
+        y = model.variable("y")
+        z = model.variable("z")
+        model.objective = x + y
+
+        model.remove_variable(z)
+
+        model.variables.map(&.name).should eq(["x", "y"])
+        model.variables.map(&.id).should eq([0, 1])
+      end
+
+      it "raises when removing a variable still referenced by the objective or a constraint" do
+        model = Optima::Model.new("Remove Variable Model")
+        x = model.variable("x")
+        y = model.variable("y")
+        model.objective = x
+
+        expect_raises(Optima::ModelError) do
+          model.remove_variable(x)
+        end
+
+        model.add_constraint(y <= 5.0, "c")
+        expect_raises(Optima::ModelError) do
+          model.remove_variable(y)
+        end
+      end
+
+      it "raises when removing a variable still referenced by the Hessian" do
+        model = Optima::Model.new("Remove Variable Model")
+        x = model.variable("x")
+        model.hessian[{x, x}] = 1.0
+
+        expect_raises(Optima::ModelError) do
+          model.remove_variable(x)
+        end
+      end
+    end
+
+    describe "Model#dup" do
+      it "clones variables, objective, constraints, and hessian independently" do
+        model = Optima::Model.new("Dup Model", Optima::ObjectiveSense::Minimize)
+        x = model.variable("x", lower_bound: 0.0, upper_bound: 10.0)
+        y = model.variable("y", lower_bound: 0.0, upper_bound: 10.0)
+        model.objective = 2 * x + 3 * y
+        model.hessian[{x, x}] = 1.0
+        c = model.add_constraint((2.0 <= x - y) <= 8.0, "range")
+
+        clone = model.dup
+
+        clone.name.should eq(model.name)
+        clone.variables.size.should eq(model.variables.size)
+        cx = clone.variables.find { |v| v.name == "x" }.not_nil!
+        cy = clone.variables.find { |v| v.name == "y" }.not_nil!
+        cx.same?(x).should be_false
+
+        clone.objective.not_nil!.terms[cx].should eq(2.0)
+        clone.objective.not_nil!.terms[cy].should eq(3.0)
+        clone.hessian[{cx, cx}].should eq(1.0)
+
+        clone_c = clone.constraints.find { |cc| cc.name == "range" }.not_nil!
+        clone_c.range_upper.should eq(8.0)
+
+        # Mutating the clone must not affect the original
+        cx.upper_bound = 999.0
+        x.upper_bound.should eq(10.0)
+      end
+    end
+
+    describe "HighsSolver solver options and diagnostics" do
+      it "accepts threads and rejects an invalid presolve mode" do
+        model = Optima::Model.new("Options Model")
+        x = model.variable("x", upper_bound: 10.0)
+        model.objective = x
+        model << (x <= 7.0)
+
+        solver = Optima::HighsSolver.new
+        solver.threads = 1
+        solver.presolve = "off"
+        model.solve(solver).optimal?.should be_true
+
+        bad_solver = Optima::HighsSolver.new
+        bad_solver.presolve = "definitely_not_a_mode"
+        expect_raises(Optima::ModelError) do
+          model.solve(bad_solver)
+        end
+      end
+
+      it "maps a time-limited MIP solve to UserAborted rather than Unknown" do
+        model = Optima::Model.new("TimeLimit Model")
+        vars = (0...40).map { |i| model.variable("x#{i}", category: Optima::VariableType::Binary) }
+        model.objective = Optima.lpSum(vars.map_with_index { |v, i| v * (i + 1) })
+        model << (Optima.lpDot(vars.map_with_index { |v, i| (i * 3 % 17 + 1).to_f64 }, vars) <= 60.0)
+
+        solver = Optima::HighsSolver.new
+        solver.time_limit = 0.0001
+        status = model.solve(solver)
+        status.should eq(Optima::SolverStatus::UserAborted)
+      end
+
+      it "captures and replays a basis via get_basis/warm_start_basis=" do
+        model = Optima::Model.new("Basis Model", Optima::ObjectiveSense::Maximize)
+        x = model.variable("x", upper_bound: 10.0)
+        y = model.variable("y", upper_bound: 10.0)
+        model.objective = 3 * x + 5 * y
+        model << (x + y <= 12.0)
+
+        solver = Optima::HighsSolver.new
+        model.solve(solver)
+        basis = solver.get_basis(model)
+        basis.col_status.size.should eq(2)
+        basis.row_status.size.should eq(1)
+
+        warm_solver = Optima::HighsSolver.new
+        warm_solver.warm_start_basis = basis
+        status = model.solve(warm_solver)
+        status.optimal?.should be_true
+        warm_solver.objective_value.should eq(solver.objective_value)
+      end
+
+      it "computes exact sensitivity ranges via native HiGHS ranging" do
+        model = Optima::Model.new("Ranging Model", Optima::ObjectiveSense::Maximize)
+        x = model.variable("x", upper_bound: 10.0)
+        y = model.variable("y", upper_bound: 10.0)
+        model.objective = 3 * x + 5 * y
+        model << (x + y <= 12.0)
+
+        solver = Optima::HighsSolver.new
+        report = solver.sensitivity_analysis(model)
+
+        # x's coefficient (3) can range up to y's (5) before the basis would change
+        lo, hi = report.obj_coefficient_ranges[x]
+        lo.should eq(0.0)
+        hi.should eq(5.0)
+      end
+    end
+
+    describe "CbcCliSolver / GlpkCliSolver dual values" do
+      it "exposes reduced_cost on CbcCliSolver, defaulting to 0.0 before any solve" do
+        solver = Optima::CbcCliSolver.new
+        model = Optima::Model.new("Cbc Reduced Cost Model")
+        x = model.variable("x")
+        solver.reduced_cost(x).should eq(0.0)
+      end
+
+      it "exposes reduced_cost and shadow_price on GlpkCliSolver, defaulting to 0.0 before any solve" do
+        solver = Optima::GlpkCliSolver.new
+        model = Optima::Model.new("Glpk Dual Model")
+        x = model.variable("x")
+        c = model.add_constraint(x <= 5.0, "c")
+        solver.reduced_cost(x).should eq(0.0)
+        solver.shadow_price(c).should eq(0.0)
+      end
+    end
   end
 end

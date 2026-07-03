@@ -11,6 +11,8 @@ module Optima
     Infeasible
     Unbounded
     InfeasibleOrUnbounded
+    # Solve was cut short before proving optimality/infeasibility - e.g. HighsSolver's
+    # time_limit/mip_gap/iteration/solution limits, or CBC's "Stopped on time/user".
     UserAborted
     ModelError
     NotSolved

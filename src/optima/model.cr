@@ -23,6 +23,62 @@ module Optima
       @objectives = [] of Tuple(Expression, Float64)
     end
 
+    # Deep-enough clone for scenario exploration (e.g. solving several bound/RHS
+    # variants of the same model without rebuilding it from scratch): variables,
+    # objective(s), constraints, and the Hessian are all rebuilt with fresh Variable
+    # instances so mutating the clone (or the original) afterwards can't affect the
+    # other - the default Reference#dup would instead share the same Variable/Expression
+    # objects between both, which #compare_by_identity keying (see Expression#terms)
+    # takes as license to alias, not copy.
+    def dup : Model
+      cloned = Model.new(@name, @sense)
+      lookup = Hash(String, Variable).new
+      @variables.each do |v|
+        lookup[v.name] = cloned.variable(v.name, v.lower_bound, v.upper_bound, v.var_type)
+      end
+
+      if obj = @objective
+        cloned.objective = duplicate_expression(obj, lookup)
+      end
+      @objectives.each do |(expr, weight)|
+        cloned.add_objective(duplicate_expression(expr, lookup), weight)
+      end
+
+      @constraints.each do |c|
+        new_expr = case expr = c.expr
+                   in Expression
+                     duplicate_expression(expr, lookup)
+                   in QuadraticExpression
+                     duplicate_expression(expr, lookup)
+                   end
+        new_c = Constraint.new(new_expr, c.constraint_type, c.name)
+        new_c.range_upper = c.range_upper
+        cloned.add_constraint(new_c)
+      end
+
+      @hessian.each do |(v1, v2), coeff|
+        cloned.hessian[{lookup[v1.name], lookup[v2.name]}] = coeff
+      end
+
+      cloned
+    end
+
+    private def duplicate_expression(expr : Expression, lookup : Hash(String, Variable)) : Expression
+      Expression.new(duplicated_terms(expr.terms, lookup), expr.constant)
+    end
+
+    private def duplicate_expression(expr : QuadraticExpression, lookup : Hash(String, Variable)) : QuadraticExpression
+      new_quad = Hash(Tuple(Variable, Variable), Float64).new
+      expr.quad_terms.each { |(v1, v2), coeff| new_quad[{lookup[v1.name], lookup[v2.name]}] = coeff }
+      QuadraticExpression.new(duplicated_terms(expr.terms, lookup), new_quad, expr.constant)
+    end
+
+    private def duplicated_terms(terms : Hash(Variable, Float64), lookup : Hash(String, Variable)) : Hash(Variable, Float64)
+      result = Hash(Variable, Float64).new.compare_by_identity
+      terms.each { |var, coeff| result[lookup[var.name]] = coeff }
+      result
+    end
+
     # `terms`/`quad_terms` Hash keys only carry a variable's name once serialized to
     # JSON (see Variable#to_json_object_key), so the placeholder Variables produced
     # while parsing them need to be swapped for the canonical instances in `variables`.
@@ -130,6 +186,52 @@ module Optima
     private def add_constraint_internal(constraint : Constraint)
       constraint.id = @constraints.size
       @constraints << constraint
+    end
+
+    # Removes a constraint and renumbers the remaining ones so `constraint.id` keeps
+    # matching its position in `constraints` - solvers (e.g. HighsSolver) key duals by
+    # that id, so a stale id after removal would silently mismap or index out of bounds
+    # (the same failure mode #compute_iis had before renumbering its temporary subsets).
+    def remove_constraint(constraint : Constraint) : Nil
+      unless @constraints.delete(constraint)
+        raise ModelError.new("Constraint not found in model")
+      end
+      @constraints.each_with_index { |c, idx| c.id = idx }
+    end
+
+    # Removes a variable and renumbers the remaining ones so `variable.id` keeps
+    # matching its position in `variables` (used directly as the solver column index -
+    # see #remove_constraint). Raises if the variable is still referenced by the
+    # objective, a constraint, or the Hessian, since silently leaving a dangling
+    # reference would corrupt whatever solves the model next.
+    def remove_variable(variable : Variable) : Nil
+      if variable_in_use?(variable)
+        raise ModelError.new("Cannot remove variable '#{variable.name}': still referenced by the objective, a constraint, or the Hessian")
+      end
+
+      index = @variables.index { |v| v.same?(variable) }
+      raise ModelError.new("Variable not found in model") unless index
+      @variables.delete_at(index)
+      @variables.each_with_index { |v, idx| v.id = idx }
+    end
+
+    private def variable_in_use?(variable : Variable) : Bool
+      if obj = @objective
+        return true if obj.terms.any? { |v, _| v.same?(variable) }
+      end
+      @objectives.each do |(expr, _)|
+        return true if expr.terms.any? { |v, _| v.same?(variable) }
+      end
+      @constraints.each do |c|
+        case expr = c.expr
+        when Expression
+          return true if expr.terms.any? { |v, _| v.same?(variable) }
+        when QuadraticExpression
+          return true if expr.terms.any? { |v, _| v.same?(variable) }
+          return true if expr.quad_terms.any? { |(v1, v2), _| v1.same?(variable) || v2.same?(variable) }
+        end
+      end
+      @hessian.any? { |(v1, v2), _| v1.same?(variable) || v2.same?(variable) }
     end
 
     def objective=(expr : Variable)

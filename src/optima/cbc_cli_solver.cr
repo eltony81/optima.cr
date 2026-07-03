@@ -12,9 +12,11 @@ module Optima
 
     @objective_value : Float64 = 0.0
     @solution : Hash(String, Float64)
+    @reduced_costs : Hash(String, Float64)
 
     def initialize
       @solution = {} of String => Float64
+      @reduced_costs = {} of String => Float64
     end
 
     def solve(model : Model) : SolverStatus
@@ -25,6 +27,7 @@ module Optima
       Optima::Log.info { "Solving optimization model '#{model.name}' with CBC CLI..." }
 
       @solution.clear
+      @reduced_costs.clear
       @objective_value = 0.0
 
       dir = File.join(Dir.current, ".optima_tmp")
@@ -111,6 +114,12 @@ module Optima
           var_name = parts[1]
           val = parts[2].to_f64? || 0.0
           @solution[var_name] = val
+          # CBC's `solve solution <file>` writes a 4th "dj" (reduced cost) column for
+          # each variable; row/constraint duals aren't in this file format at all
+          # (hence no shadow_price here - see reduced_cost's doc comment).
+          if parts.size >= 4
+            @reduced_costs[var_name] = parts[3].to_f64? || 0.0
+          end
         end
 
         Optima::Log.info { "Optimization completed. Status: #{status}, Objective: #{@objective_value}" }
@@ -133,6 +142,13 @@ module Optima
 
     def objective_value : Float64
       @objective_value
+    end
+
+    # The "dj" column from CBC's solution file. Note: CBC's plain `solve solution
+    # <file>` output has no row-level dual values, so this solver has no
+    # shadow_price - only HighsSolver exposes constraint duals.
+    def reduced_cost(variable : Variable) : Float64
+      @reduced_costs.fetch(variable.name, 0.0)
     end
 
     def active_variables(model : Model, epsilon : Float64 = 1e-9) : Hash(Variable, Float64)

@@ -46,6 +46,17 @@ Since older releases might lack precompiled packages, you can build from source 
 sudo apt-get install libhighs-dev
 ```
 
+### Windows
+Install via [vcpkg](https://vcpkg.io):
+```bat
+vcpkg install highs
+```
+Make sure the `bin` directory of your vcpkg installation (containing `highs.dll`) is on your
+`PATH`, or copy `highs.dll` next to your compiled executable, so the Crystal FFI binding can
+find it at runtime. Building Crystal itself on Windows requires MSYS2/MinGW or WSL — see the
+[Crystal Windows install guide](https://crystal-lang.org/install/on_windows/) if you haven't
+set that up yet.
+
 ### Building from Source (Fallback)
 If packages are unavailable, build HiGHS from source:
 ```bash
@@ -451,6 +462,89 @@ constraints = exprs <= rhs
 # 6. Append constraints vector to the model in one go
 model << constraints
 ```
+
+### 31. Editing a Model After Construction
+Remove constraints or variables from a model you've already built (both renumber the
+remaining ids so they keep matching their position, which solvers rely on):
+```crystal
+model.remove_constraint(some_constraint)
+
+# Raises Optima::ModelError if the variable is still referenced by the objective,
+# a constraint, or the Hessian - remove/rebuild those references first.
+model.remove_variable(some_variable)
+```
+
+### 32. Cloning a Model (`Model#dup`)
+Explore scenario variants (e.g. different costs or bounds) without rebuilding the model
+or risking cross-talk between scenarios - the clone gets entirely fresh `Variable`
+instances, so mutating one model never affects the other:
+```crystal
+scenario = model.dup
+scenario_x = scenario.variables.find { |v| v.name == "x" }.not_nil!
+scenario_x.upper_bound = 20.0 # does not affect `model`
+```
+
+### 33. HiGHS Solver Options: Threads & Presolve
+```crystal
+solver = Optima::HighsSolver.new
+solver.threads = 4          # 0 (default) lets HiGHS choose automatically
+solver.presolve = "off"     # "on", "off", or "choose" (default); anything else raises ModelError
+```
+
+### 34. Detecting a Time-Limited (vs. Proven) Solve
+`SolverStatus::UserAborted` now also covers HiGHS solves cut short by `time_limit`,
+`mip_gap`, or an iteration/solution limit - not just CBC's "stopped on time/user" - so
+you can tell "ran out of time" apart from a genuinely inconclusive `Unknown`:
+```crystal
+solver.time_limit = 30.0
+status = model.solve(solver)
+if status.user_aborted?
+  puts "Best solution found within the time limit: #{solver.objective_value}"
+end
+```
+
+### 35. Basis-Based Warm Starting (HighsSolver)
+The standard, more effective alternative to seeding a raw solution vector
+(`HighsSolver#set_solution`) when re-solving a similar model, e.g. after a small
+perturbation:
+```crystal
+solver.solve(model)
+basis = solver.get_basis(model)
+
+warm_solver = Optima::HighsSolver.new
+warm_solver.warm_start_basis = basis
+warm_solver.solve(similar_model)
+```
+
+### 36. Exact Sensitivity Ranging (HighsSolver, native)
+A single-solve alternative to `Model#sensitivity_analysis`'s perturb-and-resolve
+approach, using HiGHS's native ranging routine. Note the two report different things:
+`Model#sensitivity_analysis` gives the *objective value* at a small perturbation of
+each coefficient/RHS (a local derivative estimate), while this gives the actual
+`[min, max]` range each coefficient/RHS can take *without changing the optimal basis*
+(the textbook LP sensitivity range) - exact, not delta-approximated:
+```crystal
+solver.solve(model)
+report = solver.sensitivity_analysis(model)
+report.obj_coefficient_ranges[some_var]   # => {min, max}
+report.rhs_ranges[some_constraint]        # => {min, max}
+```
+
+### 37. CBC/GLPK Reduced Costs & Shadow Prices
+`CbcCliSolver` and `GlpkCliSolver` now also expose the dual-value column their
+solution file formats already contain, alongside `HighsSolver`:
+```crystal
+cbc_solver = Optima::CbcCliSolver.new
+model.solve(cbc_solver)
+cbc_solver.reduced_cost(some_var) # from CBC's .sol "dj" column
+# No shadow_price on CbcCliSolver: CBC's plain solution file has no row-level duals.
+
+glpk_solver = Optima::GlpkCliSolver.new
+model.solve(glpk_solver)
+glpk_solver.reduced_cost(some_var)
+glpk_solver.shadow_price(some_constraint)
+```
+Both are `0.0` for MIP solutions, which have no meaningful dual values.
 
 ---
 
